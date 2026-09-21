@@ -1,0 +1,112 @@
+// =============================================================================
+// Patrón de Diseño: Adapter (Adaptador con Duck Typing Estructural)
+// =============================================================================
+// Propósito:
+//   Permite que interfaces incompatibles trabajen juntas convirtiendo la interfaz
+//   de un servicio existente o heredado a la interfaz esperada por el cliente.
+//
+// En Aura:
+//   Se beneficia del *Structural Duck Typing* (interfaces implícitas). No es
+//   necesario heredar ni declarar palabras clave como `implements`; cualquier
+//   registro que cumpla la firma de métodos requerida satisface la interfaz.
+// =============================================================================
+
+// 1. Resultado estándar moderno en nuestra aplicación
+export type PaymentResult = {
+  success: Bool,
+  transactionId: String,
+  message: String
+};
+
+// 2. Interfaz objetivo esperada por el sistema moderno
+export interface PaymentProcessor {
+  processPayment(amount: Float, currency: String, customerId: String): PaymentResult;
+}
+
+// 3. Servicio Legado / Externo incompatible (API XML antigua)
+export type LegacyXmlGateway = {
+  legacyApiEndpoint: String
+};
+
+export fn newLegacyXmlGateway(endpoint: String): LegacyXmlGateway => {
+  legacyApiEndpoint: endpoint
+};
+
+// Método de la pasarela legada que solo entiende payloads XML serializados en texto
+export fn executeXmlTransaction(gateway: LegacyXmlGateway, xmlPayload: String): String => {
+  println(`   [Legacy-Gateway] Enviando XML crudo a ${gateway.legacyApiEndpoint}:`);
+  println(`   Payload: ${xmlPayload}`);
+  // Simula respuesta XML desde el mainframe legado
+  "<response><status>OK</status><authCode>AUTH-LEGACY-99124</authCode></response>"
+};
+
+// 4. Adaptador: Convierte la interfaz moderna en llamadas compatibles con el gateway legado
+export fn adaptLegacyGateway(legacy: LegacyXmlGateway): PaymentProcessor => {
+  {
+    processPayment: (amount: Float, currency: String, customerId: String): PaymentResult => {
+      println("   [Adapter] Traduciendo llamada tipada de Aura a XML de la pasarela legada...");
+
+      // Construcción del payload XML que espera el sistema antiguo
+      let xml = `<payment><customer>${customerId}</customer><amount>${amount}</amount><currency>${currency}</currency></payment>`;
+
+      // Ejecución a través del cliente legado
+      let xmlResponse = executeXmlTransaction(legacy, xml);
+
+      // Conversión de la respuesta XML cruda al tipo de datos seguro de Aura
+      let isOk = xmlResponse.includes("<status>OK</status>");
+      let authCode = "AUTH-LEGACY-99124";
+
+      {
+        success: isOk,
+        transactionId: authCode,
+        message: "Procesado exitosamente mediante adaptador de pasarela legada"
+      }
+    }
+  }
+};
+
+// 5. Implementación nativa moderna (para contraste)
+export fn createModernStripeProcessor(): PaymentProcessor => {
+  {
+    processPayment: (amount: Float, currency: String, customerId: String): PaymentResult => {
+      println(`   [ModernStripe] Cobro directo por API JSON: $${amount} ${currency} para cliente ${customerId}`);
+      {
+        success: true,
+        transactionId: "ch_stripe_native_8731a",
+        message: "Cobro instantáneo confirmado vía Stripe API v3"
+      }
+    }
+  }
+};
+
+// 6. Función cliente desacoplada que opera únicamente contra la interfaz PaymentProcessor
+export fn checkoutOrder(processor: PaymentProcessor, orderId: String, amount: Float, customer: String): Unit => {
+  println(`>>> Iniciando Checkout para Orden: ${orderId}`);
+  let result = processor.processPayment(amount, "USD", customer);
+
+  if (result.success) {
+    println(`   ✓ Éxito | TX: ${result.transactionId} | Detalle: ${result.message}`);
+  }else {
+    println(`   ✕ Fallo en pago: ${result.message}`);
+  }
+};
+
+// 7. Demostración y Ejecución
+export fn main(): Unit => {
+  println("==================================================");
+  println("  PATRÓN ADAPTER EN AURA LANG");
+  println("==================================================");
+
+  println("A. Procesando con Pasarela Moderna Nativa:");
+  let modernGateway = createModernStripeProcessor();
+  checkoutOrder(modernGateway, "ORD-2026-001", 149.99, "usr_alice");
+
+  println("\nB. Procesando con Pasarela Legada a través del Adaptador:");
+  let legacyService = newLegacyXmlGateway("https://legacy-banking.corp/soap/v1");
+  let adaptedGateway = adaptLegacyGateway(legacyService);
+
+  // El checkoutOrder acepta el adaptador transparentemente gracias al Duck Typing
+  checkoutOrder(adaptedGateway, "ORD-2026-002", 520.00, "usr_bob_enterprise");
+
+  println("\n✓ Adapter ejecutado correctamente.");
+};

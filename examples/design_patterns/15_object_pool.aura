@@ -1,0 +1,63 @@
+// =============================================================================
+// Patrón de Diseño: Object Pool (Reutilización Eficiente de Recursos)
+// =============================================================================
+// Propósito:
+//   Reutiliza objetos costosos de crear (como conexiones de red, buffers de memoria
+//   o instancias de renderizado) en lugar de instanciarlos y destruirlos
+//   continuamente, reduciendo la sobrecarga de asignación y presión en el GC.
+//
+// En Aura:
+//   Se utiliza la primitiva nativa `Pool.new(...)` provista por el runtime de Aura,
+//   con métodos atómicos `get()` para adquirir y `put(item)` para devolver.
+// =============================================================================
+
+export type MemoryBuffer = {
+  id: Int,
+  capacityKb: Int,
+  inUse: Bool
+};
+
+export fn main(): Unit => {
+  println("==================================================");
+  println("  PATRÓN OBJECT POOL EN AURA LANG");
+  println("==================================================");
+
+  let mut bufferSequence = 0;
+
+  // Creamos el Pool con una función factoría generadora de instancias cuando el pool está vacío
+  let bufferPool = Pool.new(() => {
+    bufferSequence = bufferSequence + 1;
+    println(`   [POOL-FACTORY] Creando un nuevo buffer físico en memoria (ID: ${bufferSequence})...`);
+    {
+      id: bufferSequence,
+      capacityKb: 64,
+      inUse: true
+    }
+  });
+
+  println("1. Adquiriendo buffers por primera vez (Pool vacío provoca creación):");
+  let buf1 = bufferPool.get();
+  println(`   ✓ Buffer adquirido: ID #${buf1.id} (${buf1.capacityKb} KB)`);
+
+  let buf2 = bufferPool.get();
+  println(`   ✓ Buffer adquirido: ID #${buf2.id} (${buf2.capacityKb} KB)`);
+
+  println("\n2. Liberando buffer ID #1 de regreso al pool:");
+  bufferPool.put(buf1);
+  println("   ✓ Buffer ID #1 retornado al pool para su reutilización.");
+
+  println("\n3. Adquiriendo un nuevo buffer (debe reciclar ID #1 sin crear nuevo objeto):");
+  let recycledBuf = bufferPool.get();
+  println(`   ✓ Buffer obtenido del pool: ID #${recycledBuf.id} (Reciclado: ${recycledBuf.id == 1})`);
+
+  println("\n4. Adquiriendo otro buffer adicional (provoca creación de ID #3):");
+  let buf3 = bufferPool.get();
+  println(`   ✓ Buffer adquirido: ID #${buf3.id}`);
+
+  // Devolver todos los buffers al pool
+  bufferPool.put(recycledBuf);
+  bufferPool.put(buf2);
+  bufferPool.put(buf3);
+  println("\n✓ Todos los buffers devueltos al pool.");
+  println("✓ Object Pool ejecutado correctamente.");
+};

@@ -1,0 +1,49 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Aura: Run Active File",
+      "type": "shell",
+      "command": "aurac run \"${file}\"",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": ["$aurac"]
+    },
+    {
+      "label": "Aura: Interactive Step Debugger",
+      "type": "shell",
+      "command": "aurac step \"${file}\"",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Aura: Debug Active File",
+      "type": "shell",
+      "command": "aurac debug \"${file}\" --brk",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Aura: Check Active File",
+      "type": "shell",
+      "command": "aurac check \"${file}\"",
+      "problemMatcher": ["$aurac"]
+    },
+    {
+      "label": "Aura: Run Test Suite",
+      "type": "shell",
+      "command": "auratest",
+      "group": "test"
+    }
+  ]
+}

@@ -1,0 +1,302 @@
+// =============================================================================
+// Patrón de Diseño: Dependency Injection & Inversion of Control (DI / IoC)
+// =============================================================================
+// Propósito:
+//   Desacoplar la lógica de negocio central (servicios y casos de uso) de sus
+//   dependencias de bajo nivel (bases de datos, clientes de red, colas, brokers),
+//   permitiendo intercambiar implementaciones sin modificar el código de dominio
+//   y facilitando pruebas unitarias exhaustivas con mocks.
+//
+// En Aura:
+//   Aura adopta el modelo "Pure DI" (Inyección por Constructor) aprovechando:
+//   1. Duck Typing Estructural (interfaces implícitas sin herencia ni `implements`).
+//   2. Registros inmutables con clausuras de métodos (thread-safe para fibers CSP).
+//   3. Composition Root centralizado en el punto de entrada (`main()`).
+//   4. Cero sobrecarga de reflexión o contenedores mágicos en tiempo de ejecución.
+// =============================================================================
+
+// --- 1. MODELOS DE DOMINIO ---
+
+export type User = {
+  id: String,
+  name: String,
+  email: String,
+  role: String,
+  createdAt: String
+};
+
+export type NotificationResult = {
+  delivered: Bool,
+  channel: String,
+  recipient: String
+};
+
+// --- 2. PUERTOS Y ABSTRACCIONES (INTERFACES ESTRUCTURALES) ---
+
+// Repositorio de persistencia de usuarios
+export interface UserRepository {
+  findById(id: String): Option<User>;
+  findByEmail(email: String): Option<User>;
+  save(user: User): Result<User, String>;
+  count(): Int;
+}
+
+// Servicio de notificaciones (Email, SMS, Webhook)
+export interface NotificationService {
+  sendWelcome(email: String, name: String): Result<NotificationResult, String>;
+}
+
+// Servicio de métricas / telemetría
+export interface MetricsCollector {
+  recordEvent(name: String, tag: String): Unit;
+}
+
+// --- 3. ADAPTADORES CONCRETOS (INFRAESTRUCTURA) ---
+
+// Adaptador 3.1: Repositorio en Memoria (Thread-Safe con Mutex)
+export fn createInMemoryUserRepository(): UserRepository => {
+  let mtx = Mutex.new();
+  let mut store: List<User> = [
+  {
+    id: "usr-1",
+    name: "Linus Torvalds",
+    email: "linus@kernel.org",
+    role: "admin",
+    createdAt: "2026-01-01T00:00:00Z"
+  }
+  ];
+
+  {
+    findById: (id: String): Option<User> => {
+      mtx.lock();
+      defer mtx.unlock();
+      let matched = store.filter(fn(u: User): Bool => u.id == id);
+      if (matched.length>0) {
+        return Some(matched[0]);
+      }else {
+        return None;
+      }
+    },
+    findByEmail: (email: String): Option<User> => {
+      mtx.lock();
+      defer mtx.unlock();
+      let matched = store.filter(fn(u: User): Bool => u.email == email);
+      if (matched.length>0) {
+        return Some(matched[0]);
+      }else {
+        return None;
+      }
+    },
+    save: (user: User): Result<User, String> => {
+      mtx.lock();
+      defer mtx.unlock();
+      let existing = store.filter(fn(u: User): Bool => u.email == user.email);
+      if (existing.length>0) {
+        return Err(`El correo '${user.email}' ya está registrado.`);
+      }
+      store.push(user);
+      return Ok(user);
+    },
+    count: (): Int => {
+      mtx.lock();
+      defer mtx.unlock();
+      return store.length;
+    }
+  }
+};
+
+// Adaptador 3.2: Notificador de Correo Electrónico (Producción / SMTP)
+export fn createSmtpNotificationService(serverHost: String): NotificationService => {
+  {
+    sendWelcome: (email: String, name: String): Result<NotificationResult, String> => {
+      println(`   [SMTP Client @ ${serverHost}] Enviando email de bienvenida a ${name} <${email}>...`);
+      Ok({
+        delivered: true,
+        channel: "SMTP",
+        recipient: email
+      })
+    }
+  }
+};
+
+// Adaptador 3.3: Colector de Métricas (Producción / Prometheus)
+export fn createPrometheusMetrics(): MetricsCollector => {
+  {
+    recordEvent: (name: String, tag: String): Unit => {
+      println(`   [Prometheus] Métrica registrada: ${name} [tag=${tag}]`);
+    }
+  }
+};
+
+// --- 4. ADAPTADORES PARA TESTING (MOCKS Y STUBS) ---
+
+// Mock 4.1: Repositorio falso configurable para pruebas unitarias
+export fn createMockUserRepository(initialUser: Option<User>): UserRepository => {
+  {
+    findById: (id: String): Option<User> => initialUser,
+    findByEmail: (email: String): Option<User> => initialUser,
+    save: (user: User): Result<User, String> => Ok(user),
+    count: (): Int => 1
+  }
+};
+
+// Mock 4.2: Notificador silencioso para pruebas (captura llamadas)
+export fn createMockNotificationService(): NotificationService => {
+  {
+    sendWelcome: (email: String, name: String): Result<NotificationResult, String> => {
+      println(`   [Mock-Notifier] Llamada interceptada para <${email}> (sin red).`);
+      Ok({
+        delivered: true,
+        channel: "Mock",
+        recipient: email
+      })
+    }
+  }
+};
+
+// Mock 4.3: Colector de métricas No-Op (no hace nada en pruebas)
+export fn createNoopMetrics(): MetricsCollector => {
+  {
+    recordEvent: (name: String, tag: String): Unit => ()
+  }
+};
+
+// --- 5. CASO DE USO / SERVICIO DE DOMINIO (INVERSIÓN DE CONTROL) ---
+//
+// Nótese que UserService depende ÚNICAMENTE de las interfaces estructurales.
+// No sabe si los datos están en Postgres, Redis, memoria o en un test runner.
+
+export type UserService = {
+  registerUser: fn(String, String, String) -> Result<User, String>,
+  getUserProfile: fn(String) -> Result<User, String>
+};
+
+// Constructor con Inyección de Dependencias (Constructor Injection)
+export fn newUserService(
+repo: UserRepository,
+notifier: NotificationService,
+metrics: MetricsCollector
+): UserService => {
+  {
+    registerUser: (name: String, email: String, role: String): Result<User, String> => {
+      metrics.recordEvent("user_registration_started", role);
+
+      // Verificar si ya existe
+      let existing = repo.findByEmail(email);
+      match existing {
+        Some(_) => {
+          metrics.recordEvent("user_registration_conflict", "duplicate");
+          Err(`Ya existe un usuario con el correo: ${email}`)
+        },
+        None => {
+          // Crear entidad de dominio
+          let newUser: User = {
+            id: `usr-${repo.count() + 1}`,
+            name: name,
+            email: email,
+            role: role,
+            createdAt: "2026-09-15T21:00:00Z"
+          };
+
+          // Guardar mediante abstracción
+          let saveRes = repo.save(newUser);
+          match saveRes {
+            Ok(saved) => {
+              // Notificar de forma desacoplada
+              let _ = notifier.sendWelcome(saved.email, saved.name);
+              metrics.recordEvent("user_registration_success", saved.role);
+              Ok(saved)
+            },
+            Err(err) => {
+              metrics.recordEvent("user_registration_failed", "repo_error");
+              Err(err)
+            }
+          }
+        }
+      }
+    },
+
+    getUserProfile: (id: String): Result<User, String> => {
+      metrics.recordEvent("user_profile_lookup", id);
+      let userOpt = repo.findById(id);
+      match userOpt {
+        Some(u) => Ok(u),
+        None => Err(`Usuario '${id}' no encontrado.`)
+      }
+    }
+  }
+};
+
+// --- 6. CONTROLADORES HTTP / PRESENTACIÓN (FABRICA DE HANDLERS) ---
+//
+// Los handlers reciben el servicio inyectado vía clausura (higher-order function).
+
+export fn makeRegisterHandler(service: UserService): fn(String, String, String) -> Result<User, String> => {
+  fn(name: String, email: String, role: String): Result<User, String> => {
+    println(`>> [HTTP Controller] Solicitud POST /api/users para '${name}' <${email}>`);
+    service.registerUser(name, email, role)
+  }
+};
+
+// --- 7. COMPOSITION ROOT & DEMOSTRACIÓN ---
+//
+// En el Composition Root (`main`), se orquestan y ensamblan todas las piezas.
+
+export fn main(): Unit => {
+  println("==================================================");
+  println("  PATRÓN DEPENDENCY INJECTION & IoC EN AURA LANG");
+  println("==================================================");
+
+  // ESCENARIO A: ENTORNO DE PRODUCCIÓN (CABLEADO REAL)
+  println("\n--- 1. Escenario de Producción (Real Wiring) ---");
+  let prodRepo = createInMemoryUserRepository();
+  let prodNotifier = createSmtpNotificationService("smtp.auramail.internal:587");
+  let prodMetrics = createPrometheusMetrics();
+
+  // Inyección de dependencias en el Composition Root
+  let prodUserService = newUserService(prodRepo, prodNotifier, prodMetrics);
+
+  // Registro de controlador
+  let registerHandler = makeRegisterHandler(prodUserService);
+
+  // Simulación de peticiones HTTP
+  let res1 = registerHandler("Ada Lovelace", "ada@computing.org", "engineer");
+  match res1 {
+    Ok(u) => println(`   ✓ Creado usuario #${u.id}: ${u.name} (${u.role})`),
+    Err(e) => println(`   ✕ Error: ${e}`)
+  };
+
+  // Intento duplicado (regla de negocio protegida)
+  let resDuplicate = registerHandler("Ada Clone", "ada@computing.org", "guest");
+  match resDuplicate {
+    Ok(u) => println(`   ✓ Creado usuario #${u.id}`),
+    Err(e) => println(`   ✓ Validación esperada: ${e}`)
+  };
+
+  // ESCENARIO B: ENTORNO DE PRUEBAS UNITARIAS (ISOLATED UNIT TESTS)
+  println("\n--- 2. Escenario de Pruebas Unitarias con Mocks ---");
+  println("Probando la lógica de negocio sin base de datos ni red real:");
+
+  let testUser: User = {
+    id: "mock-99",
+    name: "Mock User",
+    email: "mock@test.internal",
+    role: "tester",
+    createdAt: "2026-09-15T00:00:00Z"
+  };
+
+  let mockRepo = createMockUserRepository(Some(testUser));
+  let mockNotifier = createMockNotificationService();
+  let mockMetrics = createNoopMetrics();
+
+  // Mismo servicio de dominio, dependencias completamente simuladas
+  let testUserService = newUserService(mockRepo, mockNotifier, mockMetrics);
+
+  let profileRes = testUserService.getUserProfile("mock-99");
+  match profileRes {
+    Ok(u) => println(`   ✓ Test pasó: Perfil mock obtenido correctamente (${u.name})`),
+    Err(e) => println(`   ✕ Test falló: ${e}`)
+  };
+
+  println("\n✓ Inversión de Control e Inyección de Dependencias ejecutado con éxito.");
+};

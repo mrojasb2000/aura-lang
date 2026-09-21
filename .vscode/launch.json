@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "aura",
+      "request": "launch",
+      "name": "Debug Aura: Active File",
+      "program": "${file}",
+      "stopOnEntry": false,
+      "sourceMaps": true
+    },
+    {
+      "type": "aura",
+      "request": "launch",
+      "name": "Step Debug Aura: Active File (Stop on Entry)",
+      "program": "${file}",
+      "stopOnEntry": true,
+      "sourceMaps": true
+    },
+    {
+      "type": "aura",
+      "request": "attach",
+      "name": "Attach to Aura Process (Port 9229)",
+      "port": 9229,
+      "address": "127.0.0.1"
+    }
+  ]
+}

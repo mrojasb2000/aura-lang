@@ -1,0 +1,113 @@
+// =============================================================================
+// Patrón de Diseño: Strategy (Estrategia Orientada a Interfaces y Funcional)
+// =============================================================================
+// Propósito:
+//   Define una familia de algoritmos intercambiables, encapsula cada uno de
+//   ellos y los hace mutuamente intercambiables en tiempo de ejecución.
+//
+// En Aura:
+//   Se presentan dos variantes idiomáticas:
+//   1. Estrategia basada en Interfaces Estructurales (Duck Typing).
+//   2. Estrategia Funcional Pura mediante el operador Pipeline (`|>`) y funciones
+//      de primera clase, eliminando boilerplate de clases o structs envolventes.
+// =============================================================================
+
+// --- PARTE 1: Estrategia Basada en Interfaces ---
+
+export interface DiscountStrategy {
+  calculate(subtotal: Float): Float;
+  strategyName(): String;
+}
+
+// Estrategia A: Sin descuento
+export fn regularCustomerStrategy(): DiscountStrategy => {
+  {
+    calculate: (subtotal: Float): Float => 0.0,
+    strategyName: (): String => "Cliente Regular (0% desc.)"
+  }
+};
+
+// Estrategia B: Descuento VIP
+export fn vipDiscountStrategy(): DiscountStrategy => {
+  {
+    calculate: (subtotal: Float): Float => subtotal * 0.20,
+    strategyName: (): String => "Membresía VIP Gold (20% desc.)"
+  }
+};
+
+// Estrategia C: Descuento Black Friday
+export fn blackFridayStrategy(): DiscountStrategy => {
+  {
+    calculate: (subtotal: Float): Float => subtotal * 0.35,
+    strategyName: (): String => "Campaña Black Friday (35% desc.)"
+  }
+};
+
+// Carrito de compras que utiliza la estrategia
+export type ShoppingCart = {
+  subtotal: Float,
+  strategy: DiscountStrategy
+};
+
+export fn calculateFinalPrice(cart: ShoppingCart): Float => {
+  let discount = cart.strategy.calculate(cart.subtotal);
+  cart.subtotal - discount
+};
+
+// --- PARTE 2: Estrategia Funcional con Pipeline (|>) ---
+
+export type PriceTransformer = fn(Float) -> Float;
+
+export fn applyCouponTenPercent(price: Float): Float => price * 0.90;
+export fn applyVipExtraFive(price: Float): Float => price - 5.0;
+export fn applyStandardShipping(price: Float): Float => price + 15.0;
+export fn applyFreeShipping(price: Float): Float => price;
+
+// --- Demostración y Ejecución ---
+
+export fn main(): Unit => {
+  println("==================================================");
+  println("  PATRÓN STRATEGY EN AURA LANG");
+  println("==================================================");
+
+  println("1. Estrategia Basada en Interfaces (Intercambio Dinámico):");
+  let baseAmount = 500.0;
+
+  let regularCart: ShoppingCart = {
+    subtotal: baseAmount,
+    strategy: regularCustomerStrategy()
+  };
+  println(`   [${regularCart.strategy.strategyName()}] Total a pagar: $${calculateFinalPrice(regularCart)}`);
+
+  let vipCart: ShoppingCart = {
+    subtotal: baseAmount,
+    strategy: vipDiscountStrategy()
+  };
+  println(`   [${vipCart.strategy.strategyName()}] Total a pagar: $${calculateFinalPrice(vipCart)}`);
+
+  let promoCart: ShoppingCart = {
+    subtotal: baseAmount,
+    strategy: blackFridayStrategy()
+  };
+  println(`   [${promoCart.strategy.strategyName()}] Total a pagar: $${calculateFinalPrice(promoCart)}`);
+
+  println("\n2. Estrategia Funcional Pura con Pipelines (|>) de Aura:");
+  let itemPrice = 100.0;
+
+  // Composición fluida de algoritmos como pipeline de transformación
+  let finalCalculated = itemPrice
+  |> applyCouponTenPercent
+  |> applyVipExtraFive
+  |> applyStandardShipping;
+
+  println(`   Precio Original: $${itemPrice}`);
+  println(`   Pipeline de cálculo: Precio (100) |> Cupón (-10%) |> VIP Extra (-$5) |> Envío (+$15)`);
+  println(`   Precio Final Resultante: $${finalCalculated}`);
+
+  let freeShippingCalculation = itemPrice
+  |> applyCouponTenPercent
+  |> applyFreeShipping;
+  println(`   Variante con Envío Gratis: $${freeShippingCalculation}`);
+
+  println("\n✓ Strategy ejecutado correctamente.");
+};

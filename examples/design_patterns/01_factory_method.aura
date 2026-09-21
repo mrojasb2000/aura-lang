@@ -1,0 +1,99 @@
+// =============================================================================
+// Patrón de Diseño: Factory Method (Método de Fábrica)
+// =============================================================================
+// Propósito:
+//   Define una interfaz o fábrica para crear objetos, pero delega en tipos
+//   específicos la instanciación de variantes concretas.
+//
+// En Aura:
+//   Se combina la ergonomía de los tipos algebraicos (Sum Types / ADTs) con
+//   funciones de fábrica y pattern matching exhaustivo verificado en tiempo
+//   de compilación, eliminando la sobrecarga de jerarquías de clases pesadas.
+// =============================================================================
+
+// 1. Definición del Tipo Suma para los diferentes tipos de Notificaciones
+export type Notification =
+| Email {to: String, subject: String, body: String}
+| SMS {phoneNumber: String, message: String}
+| Slack {channel: String, text: String}
+| Webhook {url: String, payload: String};
+
+// 2. Interfaz común para el despachador de notificaciones (Duck Typing)
+export interface NotificationDispatcher {
+  dispatch(notification: Notification): String;
+}
+
+// 3. Implementación del despachador utilizando Pattern Matching Exhaustivo
+export fn createDispatcher(): NotificationDispatcher => {
+  {
+    dispatch: (n: Notification): String => {
+      match n {
+        Email {to, subject, body} =>
+        `📧 [EMAIL] Enviado a: ${to} | Asunto: "${subject}" | Contenido: ${body}`,
+        SMS {phoneNumber, message} =>
+        `📱 [SMS] Enviado al móvil: ${phoneNumber} | Texto: ${message}`,
+        Slack {channel, text} =>
+        `💬 [SLACK] Publicado en #${channel} | Mensaje: ${text}`,
+        Webhook {url, payload} =>
+        `🌐 [WEBHOOK] POST enviado a ${url} | Payload: ${payload}`
+      }
+    }
+  }
+};
+
+// 4. Fábrica de Notificaciones (NotificationFactory)
+// Provee constructores semánticos y seguros para el dominio
+export fn makeEmail(to: String, subject: String, body: String): Notification =>
+Notification.Email({to: to, subject: subject, body: body});
+
+export fn makeSMS(phoneNumber: String, message: String): Notification =>
+Notification.SMS({phoneNumber: phoneNumber, message: message});
+
+export fn makeSlack(channel: String, text: String): Notification =>
+Notification.Slack({channel: channel, text: text});
+
+export fn makeWebhook(url: String, payload: String): Notification =>
+Notification.Webhook({url: url, payload: payload});
+
+// 5. Fábrica dinámica basada en configuración / tipo de canal
+export fn notificationFactory(channelType: String, recipient: String, content: String): Notification => {
+  if (channelType == "email") {
+    return makeEmail(recipient, "Alerta de Sistema Aura", content);
+  }
+  if (channelType == "sms") {
+    return makeSMS(recipient, content);
+  }
+  if (channelType == "slack") {
+    return makeSlack(recipient, content);
+  }
+  // Por defecto, enviar por Webhook
+  makeWebhook(`https://api.internal.net/alerts/${recipient}`, content)
+};
+
+// 6. Demostración y Ejecución
+export fn main(): Unit => {
+  println("==================================================");
+  println("  PATRÓN FACTORY METHOD EN AURA LANG");
+  println("==================================================");
+
+  let dispatcher = createDispatcher();
+
+  // A. Creación a través de constructores semánticos de fábrica
+  let notif1 = makeEmail("dev@aura-lang.org", "Despliegue Exitoso", "El cluster v2.4 está operativo.");
+  let notif2 = makeSMS("+56912345678", "Código de verificación 2FA: 948210");
+  let notif3 = makeSlack("infra-alerts", "CPU usage al 42% en nodo worker-03");
+
+  println(dispatcher.dispatch(notif1));
+  println(dispatcher.dispatch(notif2));
+  println(dispatcher.dispatch(notif3));
+
+  // B. Creación dinámica mediante la fábrica genérica
+  println("\n--- Creación Dinámica con Factory ---");
+  let dynamicNotif = notificationFactory("slack", "devops-room", "Pipeline finalizado con éxito.");
+  println(dispatcher.dispatch(dynamicNotif));
+
+  let fallbackNotif = notificationFactory("unknown", "audit-service", "{\"event\":\"login\"}");
+  println(dispatcher.dispatch(fallbackNotif));
+
+  println("\n✓ Factory Method ejecutado correctamente sin errores.");
+};

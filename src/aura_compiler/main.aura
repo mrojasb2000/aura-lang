@@ -1,0 +1,52 @@
+module Aura.Compiler.Main
+
+import { tokenize } from "./lexer"
+import { parseModule } from "./parser"
+import { generate } from "./codegen"
+
+export fn compileAura(source: String): Result<String, String> {
+  let tokens = tokenize(source)?;
+  let moduleNode = parseModule(tokens)?;
+  let jsCode = generate(moduleNode);
+  return Ok(jsCode);
+}
+
+export fn runCli(): () {
+  let args = process.argv;
+  if (args.length < 3) {
+    println("Aura Self-Hosted Compiler (v0.2.0)");
+    println("Usage: node aurac.mjs <file.aura> [-o <output.js>]");
+    return ();
+  }
+
+  let filename = args[2];
+  let mut outputFilename = "output.js";
+
+  if (args.length >= 5 && args[3] == "-o") {
+    outputFilename = args[4];
+  } else if (filename.endsWith(".aura")) {
+    outputFilename = filename.replace(".aura", ".js");
+  }
+
+  if (!fs.existsSync(filename)) {
+    println(`Error: File '${filename}' not found.`);
+    process.exit(1);
+    return ();
+  }
+
+  let source = fs.readFileSync(filename, "utf8");
+  let result = compileAura(source);
+
+  match result {
+    Ok(code) => {
+      fs.writeFileSync(outputFilename, code);
+      println(`✓ Successfully compiled '${filename}' -> '${outputFilename}'`);
+    },
+    Err(err) => {
+      println(`✕ Compilation error in '${filename}': ${err}`);
+      process.exit(1);
+    }
+  }
+}
+
+runCli();

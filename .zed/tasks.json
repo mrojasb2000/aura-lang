@@ -1,0 +1,51 @@
+[
+  {
+    "label": "Aura: Run Active File",
+    "command": "aurac",
+    "args": ["run", "$ZED_FILE"],
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Aura: Interactive Step Debugger",
+    "command": "aurac",
+    "args": ["step", "$ZED_FILE"],
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Aura: Debug Active File (Listen 9229)",
+    "command": "aurac",
+    "args": ["debug", "$ZED_FILE", "--brk"],
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Aura: Type Check Active File",
+    "command": "aurac",
+    "args": ["check", "$ZED_FILE"],
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Aura: Build Standalone Binary",
+    "command": "aurac",
+    "args": ["build", "$ZED_FILE", "--standalone"],
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Aura: Format Active File",
+    "command": "aurafmt",
+    "args": ["-w", "$ZED_FILE"],
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Aura: Run Test Suite",
+    "command": "auratest",
+    "args": [],
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  }
+]

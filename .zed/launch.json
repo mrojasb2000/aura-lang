@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Aura Active File",
+      "type": "node",
+      "request": "launch",
+      "program": "${file}",
+      "runtimeExecutable": "aurac",
+      "runtimeArgs": ["debug", "--brk"],
+      "port": 9229,
+      "sourceMaps": true
+    },
+    {
+      "name": "Attach to Aura Debugger (Port 9229)",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "address": "127.0.0.1",
+      "sourceMaps": true
+    }
+  ]
+}

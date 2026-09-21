@@ -1,0 +1,143 @@
+// =============================================================================
+// Patrón de Diseño: Worker Pool (Pool de Trabajadores Concurrentes CSP con TCO)
+// =============================================================================
+// Propósito:
+//   Limita y administra el número de ejecuciones concurrentes para procesar
+//   una cola de tareas, evitando el agotamiento de memoria o descriptores de
+//   archivo y maximizando el paralelismo del procesador.
+//
+// En Aura:
+//   Es el patrón de concurrencia fundamental del modelo CSP (estilo Go).
+//   Utiliza fibers livianos (`spawn`), canales con búfer (`Channel<T>`),
+//   recursión optimizada por la cola (TCO - Tail Call Optimization) y
+//   sincronización determinista con `WaitGroup`.
+// =============================================================================
+
+// 1. Tipos de Datos de la Tarea y su Resultado
+export type WorkerJob = {
+  id: Int,
+  taskName: String,
+  dataValue: Int
+};
+
+export type JobOutcome = {
+  jobId: Int,
+  workerId: Int,
+  computedResult: Int,
+  success: Bool
+};
+
+// 2. Bucle Recursivo del Trabajador (Optimizado automáticamente con TCO)
+export fn workerLoop(
+workerId: Int,
+jobsCh: Channel<WorkerJob>,
+resultsCh: Channel<JobOutcome>,
+wg: WaitGroup
+): Task<Unit, String> => {
+  let jobMsg = <-jobsCh;
+  match jobMsg {
+    Some(job) => {
+      // Simulación de cómputo sobre la tarea
+      let computation = job.dataValue * job.dataValue + 7;
+      let outcome: JobOutcome = {
+        jobId: job.id,
+        workerId: workerId,
+        computedResult: computation,
+        success: true
+      };
+
+      println(`      ⚙️ [Worker #${workerId}] Procesó Job #${job.id} ('${job.taskName}'): Salida = ${computation}`);
+      resultsCh <- outcome;
+
+      // Llamada recursiva en posición de cola (TCO Loop)
+      workerLoop(workerId, jobsCh, resultsCh, wg)
+    },
+    None => {
+      println(`   ⏹️ [Worker #${workerId}] Canal de tareas cerrado. Finalizando worker.`);
+      wg.done();
+    }
+  }
+};
+
+// 3. Spawns del fiber de cada worker
+export fn startWorker(
+workerId: Int,
+jobsCh: Channel<WorkerJob>,
+resultsCh: Channel<JobOutcome>,
+wg: WaitGroup
+): Unit => {
+  spawn {
+    workerLoop(workerId, jobsCh, resultsCh, wg);
+  };
+};
+
+// 4. Bucle Recolector Recursivo con TCO
+export fn collectResults(resultsCh: Channel<JobOutcome>, acc: Int = 0): Task<Int, String> => {
+  let resMsg = <-resultsCh;
+  match resMsg {
+    Some(outcome) => {
+      println(`   ✓ Recibido resultado de Job #${outcome.jobId} (Worker #${outcome.workerId}) -> ${outcome.computedResult}`);
+      collectResults(resultsCh, acc + 1)
+    },
+    None => {
+      println("   ✓ Bucle recolector finalizado. Canal de resultados cerrado.");
+      acc
+    }
+  }
+};
+
+// 5. Orquestador del Worker Pool
+export async fn main(): Task<Unit, String> => {
+  println("==================================================");
+  println("  PATRÓN WORKER POOL CONCURRENTE EN AURA LANG");
+  println("==================================================");
+
+  let numWorkers = 3;
+  let totalJobs = 6;
+
+  // Canales tipados con búfer para desacoplar productores y consumidores
+  let jobsCh: Channel<WorkerJob> = Channel.make(10);
+  let resultsCh: Channel<JobOutcome> = Channel.make(10);
+  let wg = WaitGroup.new();
+
+  println(`1. Desplegando Pool de ${numWorkers} Workers concurrentes:`);
+  wg.add(numWorkers);
+  startWorker(1, jobsCh, resultsCh, wg);
+  startWorker(2, jobsCh, resultsCh, wg);
+  startWorker(3, jobsCh, resultsCh, wg);
+
+  // 6. Productor (Fiber en segundo plano que encola las tareas)
+  spawn {
+    println("\n2. Productor encolando tareas en el canal de entrada...");
+    let jobsList: List<WorkerJob> = [
+    {id: 101, taskName: "Cálculo de Chequeo Criptográfico", dataValue: 12},
+    {id: 102, taskName: "Indexación de Documento JSON", dataValue: 25},
+    {id: 103, taskName: "Compresión de Imagen PNG", dataValue: 40},
+    {id: 104, taskName: "Generación de Token JWT", dataValue: 15},
+    {id: 105, taskName: "Serialización de Esquema Protocol Buffer", dataValue: 33},
+    {id: 106, taskName: "Verificación de Certificado X.509", dataValue: 18}
+    ];
+
+    for job in jobsList {
+      jobsCh <- job;
+    }
+
+    // Cerramos el canal para avisar a los workers que no habrá más trabajos
+    Channel.close(jobsCh);
+    println("   ✓ Todas las tareas fueron encoladas y el canal fue cerrado.");
+  };
+
+  // 7. Supervisor (Cierra el canal de resultados cuando todos los workers terminan)
+  spawn {
+    await wg.wait();
+    Channel.close(resultsCh);
+    println("\n3. [Supervisor] Todos los workers terminaron su labor. Canal de resultados cerrado.");
+  };
+
+  // 8. Recolector de Resultados (Consumer principal)
+  println("\n4. Recolectando resultados en tiempo real:");
+  let completedCount = await collectResults(resultsCh, 0);
+
+  println(`\nTotal de trabajos procesados en paralelo: ${completedCount}/${totalJobs}`);
+  println("✓ Worker Pool ejecutado correctamente.");
+};

@@ -1,0 +1,198 @@
+module Aura.Compiler.Ast
+
+// -----------------------------------------------------------------------------
+// TOKENS
+// -----------------------------------------------------------------------------
+
+export type TokenKind =
+  | TFn
+  | TLet
+  | TMut
+  | TType
+  | TMatch
+  | TWhen
+  | TIf
+  | TElse
+  | TWhile
+  | TFor
+  | TIn
+  | TBreak
+  | TContinue
+  | TReturn
+  | TModule
+  | TExport
+  | TImport
+  | TFrom
+  | TSpawn
+  | TSelect
+  | TIdent { value: String }
+  | TInt { value: Int }
+  | TFloat { value: Float }
+  | TString { value: String }
+  | TBool { value: Bool }
+  | TPipe
+  | TFatArrow
+  | TArrow
+  | TArrowLeft
+  | TEqual
+  | TEqualEqual
+  | TNotEqual
+  | TLess
+  | TLessEqual
+  | TGreater
+  | TGreaterEqual
+  | TPlus
+  | TMinus
+  | TStar
+  | TSlash
+  | TPercent
+  | TAndAnd
+  | TOrOr
+  | TBang
+  | TPipeOp
+  | TQuestion
+  | TLParen
+  | TRParen
+  | TLBrace
+  | TRBrace
+  | TLBracket
+  | TRBracket
+  | TColon
+  | TComma
+  | TSemicolon
+  | TDot
+  | TUnderscore
+  | TEof
+
+export type Token = {
+  kind: TokenKind,
+  line: Int,
+  column: Int
+}
+
+// -----------------------------------------------------------------------------
+// AST TYPES
+// -----------------------------------------------------------------------------
+
+export type TypeNode =
+  | TyNamed { name: String, args: List<TypeNode> }
+  | TyFunction { params: List<TypeNode>, returnType: TypeNode }
+  | TyRecord { fields: List<{ key: String, value: TypeNode }> }
+  | TyTuple { items: List<TypeNode> }
+  | TyUnit
+
+// -----------------------------------------------------------------------------
+// EXPRESSIONS
+// -----------------------------------------------------------------------------
+
+export type LiteralValue =
+  | LitInt { val: Int }
+  | LitFloat { val: Float }
+  | LitString { val: String }
+  | LitBool { val: Bool }
+  | LitUnit
+
+export type BinOperator =
+  | OpAdd
+  | OpSub
+  | OpMul
+  | OpDiv
+  | OpMod
+  | OpEq
+  | OpNeq
+  | OpLt
+  | OpLte
+  | OpGt
+  | OpGte
+  | OpAnd
+  | OpOr
+
+export type UnOperator =
+  | OpNeg
+  | OpNot
+
+export type PatternNode =
+  | PatWildcard
+  | PatVariable { name: String }
+  | PatLiteral { lit: LiteralValue }
+  | PatConstructor { name: String, args: List<PatternNode> }
+  | PatList { items: List<PatternNode>, rest: Option<String> }
+  | PatRecord { fields: List<{ key: String, pat: PatternNode }> }
+
+export type MatchArmNode = {
+  pattern: PatternNode,
+  guard: Option<ExprNode>,
+  body: ExprNode
+}
+
+export type ExprNode =
+  | ExprLit { lit: LiteralValue }
+  | ExprIdent { name: String }
+  | ExprBinary { op: BinOperator, left: ExprNode, right: ExprNode }
+  | ExprUnary { op: UnOperator, expr: ExprNode }
+  | ExprPipe { left: ExprNode, right: ExprNode }
+  | ExprCall { callee: ExprNode, args: List<ExprNode> }
+  | ExprMember { obj: ExprNode, field: String }
+  | ExprIndex { obj: ExprNode, index: ExprNode }
+  | ExprIf { cond: ExprNode, thenBranch: ExprNode, elseBranch: Option<ExprNode> }
+  | ExprWhile { cond: ExprNode, body: ExprNode }
+  | ExprForIn { indexName: Option<String>, varName: String, iter: ExprNode, body: ExprNode }
+  | ExprMatch { subject: ExprNode, arms: List<MatchArmNode> }
+  | ExprBlock { stmts: List<StmtNode> }
+  | ExprList { items: List<ExprNode> }
+  | ExprRecord { fields: List<{ key: String, value: ExprNode }> }
+  | ExprTry { inner: ExprNode }
+  | ExprReturn { val: Option<ExprNode> }
+  | ExprBreak
+  | ExprContinue
+
+export type StmtNode =
+  | StmtLet { name: String, isMut: Bool, annot: Option<TypeNode>, val: ExprNode }
+  | StmtExpr { expr: ExprNode }
+  | StmtReturn { val: Option<ExprNode> }
+  | StmtAssign { target: String, val: ExprNode }
+
+// -----------------------------------------------------------------------------
+// MODULE ITEMS & DECLARATIONS
+// -----------------------------------------------------------------------------
+
+export type ParamNode = {
+  name: String,
+  annot: Option<TypeNode>,
+  defaultVal: Option<ExprNode>
+}
+
+export type VariantNode = {
+  name: String,
+  fields: List<TypeNode>
+}
+
+export type ItemNode =
+  | ItemFunction {
+      name: String,
+      isExported: Bool,
+      isAsync: Bool,
+      params: List<ParamNode>,
+      returnType: Option<TypeNode>,
+      body: ExprNode
+    }
+  | ItemSumType {
+      name: String,
+      isExported: Bool,
+      variants: List<VariantNode>
+    }
+  | ItemTypeAlias {
+      name: String,
+      isExported: Bool,
+      target: TypeNode
+    }
+  | ItemImport {
+      source: String,
+      items: List<String>
+    }
+  | ItemStmt { stmt: StmtNode }
+
+export type ModuleNode = {
+  name: Option<String>,
+  items: List<ItemNode>
+}

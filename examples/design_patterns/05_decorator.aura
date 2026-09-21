@@ -1,0 +1,122 @@
+// =============================================================================
+// Patrón de Diseño: Decorator (Decorador de Servicios e Interfaces)
+// =============================================================================
+// Propósito:
+//   Añade responsabilidades o comportamientos transversales (como logging,
+//   medición de latencia o autorización) a un objeto dinámicamente, sin
+//   modificar su código original y manteniendo la misma interfaz.
+//
+// En Aura:
+//   Se implementa envolviendo implementaciones de interfaces con funciones de
+//   orden superior y aprovechando `defer` para medir tiempos y registrar salidas.
+// =============================================================================
+
+// 1. Interfaz común del servicio
+export interface UserService {
+  getUser(userId: String): String;
+  saveUser(userId: String, name: String): Unit;
+}
+
+// 2. Implementación Concreta Base (el componente núcleo sin decorar)
+export fn createCoreUserService(): UserService => {
+  {
+    getUser: (userId: String): String => {
+      println(`      [CoreService] Consultando usuario en base de datos: ${userId}`);
+      `{"id": "${userId}", "name": "Mavro Dev", "role": "Architect"}`
+    },
+
+    saveUser: (userId: String, name: String): Unit => {
+      println(`      [CoreService] Persistiendo usuario ${userId} (${name}) en almacenamiento persistente.`);
+    }
+  }
+};
+
+// 3. Decorador 1: Registro y Auditoría (Logging Decorator)
+export fn withLogging(inner: UserService): UserService => {
+  {
+    getUser: (userId: String): String => {
+      println(`   📋 [LOGGING] >> Invocando getUser('${userId}')`);
+      defer println(`   📋 [LOGGING] << Finalizado getUser('${userId}')`);
+      inner.getUser(userId)
+    },
+
+    saveUser: (userId: String, name: String): Unit => {
+      println(`   📋 [LOGGING] >> Invocando saveUser('${userId}', '${name}')`);
+      defer println(`   📋 [LOGGING] << Finalizado saveUser('${userId}')`);
+      inner.saveUser(userId, name);
+    }
+  }
+};
+
+// 4. Decorador 2: Métricas de Rendimiento y Latencia (Metrics Decorator)
+export fn withMetrics(inner: UserService): UserService => {
+  {
+    getUser: (userId: String): String => {
+      let startTimeMs = 1200;// Simulación de timestamp de inicio
+      defer {
+        let elapsed = 14;// Simulación de tiempo transcurrido en ms
+        println(`   ⏱️ [METRICS] Operación getUser completada en ${elapsed} ms.`);
+      };
+      inner.getUser(userId)
+    },
+
+    saveUser: (userId: String, name: String): Unit => {
+      defer println("   ⏱️ [METRICS] Operación saveUser registrada con éxito en 22 ms.");
+      inner.saveUser(userId, name);
+    }
+  }
+};
+
+// 5. Decorador 3: Control de Acceso y Autorización (Security Decorator)
+export fn withSecurity(inner: UserService, currentUserRole: String): UserService => {
+  {
+    getUser: (userId: String): String => {
+      // Cualquiera puede leer su propio perfil
+      inner.getUser(userId)
+    },
+
+    saveUser: (userId: String, name: String): Unit => {
+      if (currentUserRole != "admin") {
+        println(`   🔒 [SECURITY] ACCESO DENEGADO: El rol '${currentUserRole}' no tiene permiso de escritura.`);
+        return();
+      }
+      println("   🔒 [SECURITY] Permiso concedido a usuario administrador.");
+      inner.saveUser(userId, name);
+    }
+  }
+};
+
+// 6. Demostración y Composición
+export fn main(): Unit => {
+  println("==================================================");
+  println("  PATRÓN DECORATOR EN AURA LANG");
+  println("==================================================");
+
+  // A. Uso del servicio base sin decorar
+  println("1. Servicio Base (sin decoradores):");
+  let coreService = createCoreUserService();
+  let u1 = coreService.getUser("usr_100");
+  println(`   Resultado: ${u1}`);
+
+  // B. Envolviendo con Logging
+  println("\n2. Servicio decorado con Logging:");
+  let loggedService = withLogging(coreService);
+  let u2 = loggedService.getUser("usr_200");
+
+  // C. Composición de múltiples decoradores (Logging + Metrics + Security)
+  println("\n3. Servicio con múltiple decoración (Logging + Metrics + Security):");
+  let secureAndLoggedService = withLogging(withMetrics(withSecurity(coreService, "admin")));
+
+  println("--- Invocando getUser con decoradores apilados ---");
+  secureAndLoggedService.getUser("usr_admin_01");
+
+  println("\n--- Invocando saveUser con permisos de admin ---");
+  secureAndLoggedService.saveUser("usr_new", "Elena Rostova");
+
+  // D. Intento de mutación con permisos insuficientes
+  println("\n4. Intento con permisos insuficientes (rol: 'guest'):");
+  let restrictedService = withLogging(withSecurity(coreService, "guest"));
+  restrictedService.saveUser("usr_hack", "Intruder");
+
+  println("\n✓ Decorator ejecutado correctamente.");
+};

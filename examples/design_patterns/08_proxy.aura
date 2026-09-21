@@ -1,0 +1,94 @@
+// =============================================================================
+// Patrón de Diseño: Proxy (Proxy de Caché y Control de Acceso)
+// =============================================================================
+// Propósito:
+//   Proporciona un sustituto o intermediario de un objeto para controlar el
+//   acceso al mismo, implementar caché en memoria o diferir operaciones costosas.
+//
+// En Aura:
+//   Se implementa satisfaciendo la misma interfaz del servicio original
+//   mediante *Structural Duck Typing*, interceptando las consultas y
+//   almacenando en un diccionario en memoria (`Map`) para evitar latencia de red.
+// =============================================================================
+
+// 1. Interfaz común del servicio de datos
+export interface WeatherService {
+  getTemperature(city: String): Float;
+}
+
+// 2. Servicio Real (RealSubject): Operación de red lenta y de alto costo
+export fn createRealWeatherService(): WeatherService => {
+  {
+    getTemperature: (city: String): Float => {
+      println(`      [Real-API-Satellite] Realizando llamada de red a estación meteorológica en '${city}'...`);
+      // Simula diferentes temperaturas por ciudad
+      if (city == "Santiago") {
+        return 22.5;
+      }
+      if (city == "Buenos Aires") {
+        return 25.0;
+      }
+      if (city == "Madrid") {
+        return 18.2;
+      }
+      15.0
+    }
+  }
+};
+
+// 3. Proxy de Caché (CachingProxy): Intercepta llamadas y almacena resultados
+export fn createWeatherCacheProxy(realService: WeatherService): WeatherService => {
+  let cache = Map.new();
+
+  {
+    getTemperature: (city: String): Float => {
+      // Verificar si el resultado ya se encuentra en caché
+      if (cache.has(city)) {
+        println(`   ⚡ [CACHE-PROXY] HIT: Retornando temperatura de '${city}' directamente desde memoria.`);
+        return cache.get(city);
+      }
+
+      // Cache MISS: Delegar en el servicio real y actualizar la caché
+      println(`   🔍 [CACHE-PROXY] MISS: '${city}' no está en caché. Delegando al satélite real...`);
+      let freshTemp = realService.getTemperature(city);
+      cache.set(city, freshTemp);
+
+      defer println(`   💾 [CACHE-PROXY] Registro actualizado en caché para '${city}'.`);
+      freshTemp
+    }
+  }
+};
+
+// 4. Función consumidora que solo conoce la interfaz
+export fn printCityReport(service: WeatherService, city: String): Unit => {
+  let temp = service.getTemperature(city);
+  println(`   >> Reporte Clima [${city}]: ${temp} °C\n`);
+};
+
+// 5. Demostración y Ejecución
+export fn main(): Unit => {
+  println("==================================================");
+  println("  PATRÓN PROXY EN AURA LANG");
+  println("==================================================");
+
+  let realSatelliteService = createRealWeatherService();
+  let proxyService = createWeatherCacheProxy(realSatelliteService);
+
+  // Primera consulta: Provoca un Cache MISS y acude al servicio real
+  println("1. Primera consulta para 'Santiago':");
+  printCityReport(proxyService, "Santiago");
+
+  // Segunda consulta: Debe resolver inmediatamente como Cache HIT
+  println("2. Segunda consulta para 'Santiago' (inmediata):");
+  printCityReport(proxyService, "Santiago");
+
+  // Consulta a otra ciudad (Cache MISS):
+  println("3. Primera consulta para 'Madrid':");
+  printCityReport(proxyService, "Madrid");
+
+  // Tercera consulta a 'Santiago' (sigue en memoria):
+  println("4. Tercera consulta para 'Santiago':");
+  printCityReport(proxyService, "Santiago");
+
+  println("✓ Proxy ejecutado correctamente.");
+};

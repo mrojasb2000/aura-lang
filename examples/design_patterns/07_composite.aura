@@ -1,0 +1,118 @@
+// =============================================================================
+// Patrón de Diseño: Composite (Composición Jerárquica con Tipos Suma)
+// =============================================================================
+// Propósito:
+//   Permite componer objetos en estructuras de árbol para representar
+//   jerarquías parte-todo, permitiendo a los clientes tratar nodos individuales
+//   y ramas compuestas de manera uniforme.
+//
+// En Aura:
+//   Se implementa de forma idiomática mediante tipos suma algebraicos recursivos
+//   (ADTs) y pattern matching exhaustivo, eliminando la necesidad de clases
+//   abstractas complejas y comprobaciones manuales de tipos en tiempo de ejecución.
+// =============================================================================
+
+// 1. Tipo Suma Recursivo: Representa un elemento en el árbol de archivos
+export type FileSystemNode =
+| File {name: String, sizeKb: Int, extension: String}
+| Directory {name: String, children: List<FileSystemNode>};
+
+// 2. Operación Uniforme: Calcular tamaño total acumulado del nodo (hoja o compuesto)
+export fn calculateTotalSize(node: FileSystemNode): Int => {
+  match node {
+    File {name, sizeKb, extension} => sizeKb,
+    Directory {name, children} => {
+      let mut total = 0;
+      for child in children {
+        total = total + calculateTotalSize(child);
+      }
+      total
+    }
+  }
+};
+
+// 3. Operación Uniforme: Contar total de archivos regulares en la estructura
+export fn countFiles(node: FileSystemNode): Int => {
+  match node {
+    File {name, sizeKb, extension} => 1,
+    Directory {name, children} => {
+      let mut count = 0;
+      for child in children {
+        count = count + countFiles(child);
+      }
+      count
+    }
+  }
+};
+
+// 4. Operación Uniforme: Renderizar árbol con indentación jerárquica
+export fn renderTree(node: FileSystemNode, prefix: String = ""): Unit => {
+  match node {
+    File {name, sizeKb, extension} => {
+      println(`${prefix}📄 [FILE] ${name}.${extension} (${sizeKb} KB)`);
+    },
+    Directory {name, children} => {
+      println(`${prefix}📁 [DIR] ${name}/`);
+      for child in children {
+        renderTree(child, `${prefix}   ├── `);
+      }
+    }
+  }
+};
+
+// 5. Constructores auxiliares de fábrica
+export fn makeFile(name: String, extension: String, sizeKb: Int): FileSystemNode =>
+FileSystemNode.File({name: name, extension: extension, sizeKb: sizeKb});
+
+export fn makeDirectory(name: String, children: List<FileSystemNode>): FileSystemNode =>
+FileSystemNode.Directory({name: name, children: children});
+
+// 6. Demostración y Ejecución
+export fn main(): Unit => {
+  println("==================================================");
+  println("  PATRÓN COMPOSITE EN AURA LANG");
+  println("==================================================");
+
+  // Construcción de la jerarquía de un proyecto Aura
+  let readme = makeFile("README", "md", 12);
+  let license = makeFile("LICENSE", "txt", 2);
+
+  let astSrc = makeFile("ast", "aura", 45);
+  let parserSrc = makeFile("parser", "aura", 78);
+  let typecheckerSrc = makeFile("typechecker", "aura", 92);
+  let srcDir = makeDirectory("src", [astSrc, parserSrc, typecheckerSrc]);
+
+  let unitTest = makeFile("compiler_test", "aura", 34);
+  let benchTest = makeFile("bench_test", "aura", 28);
+  let testsDir = makeDirectory("tests", [unitTest, benchTest]);
+
+  let configJson = makeFile("aura_package", "json", 4);
+
+  // Nodo raíz compuesto que agrupa hojas y otros directorios
+  let projectRoot = makeDirectory("aura_compiler_project", [
+  readme,
+  license,
+  configJson,
+  srcDir,
+  testsDir
+  ]);
+
+  // Visualización uniforme
+  println("1. Visualización del Árbol de Directorios (Composite):");
+  renderTree(projectRoot, "");
+
+  // Operaciones polimórficas recursivas
+  println("\n2. Métricas Calculadas Uniformemente sobre el Árbol:");
+  let totalSize = calculateTotalSize(projectRoot);
+  let totalFiles = countFiles(projectRoot);
+
+  println(`   ✓ Tamaño Total del Proyecto: ${totalSize} KB`);
+  println(`   ✓ Cantidad Total de Archivos: ${totalFiles} archivos`);
+
+  // También funciona uniformemente sobre un sub-árbol individual
+  println("\n3. Operación sobre un Sub-árbol ('src'):");
+  println(`   ✓ Tamaño del subdirectorio src/: ${calculateTotalSize(srcDir)} KB`);
+  println(`   ✓ Archivos en src/: ${countFiles(srcDir)}`);
+
+  println("\n✓ Composite ejecutado correctamente.");
+};

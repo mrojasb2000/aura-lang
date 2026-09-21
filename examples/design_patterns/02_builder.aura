@@ -1,0 +1,149 @@
+// =============================================================================
+// Patrón de Diseño: Builder (Constructor Inmutable Funcional)
+// =============================================================================
+// Propósito:
+//   Separa la construcción de un objeto complejo de su representación, permitiendo
+//   la creación paso a paso de distintas configuraciones con validación estricta.
+//
+// En Aura:
+//   Aprovecha la inmutabilidad por defecto y la actualización funcional de
+//   registros (`...base, campo: valor`), garantizando que cada paso del builder
+//   sea libre de efectos secundarios y seguro para concurrencia.
+// =============================================================================
+
+// 1. Estructura del producto final
+export type ServerConfig = {
+  host: String,
+  port: Int,
+  enableTls: Bool,
+  timeoutMs: Int,
+  maxConnections: Int,
+  routes: List<String>
+};
+
+// 2. Interfaz del Builder con API fluida (Fluent API)
+export interface ServerConfigBuilder {
+  setHost(host: String): ServerConfigBuilder;
+  setPort(port: Int): ServerConfigBuilder;
+  withTls(enabled: Bool): ServerConfigBuilder;
+  setTimeout(timeoutMs: Int): ServerConfigBuilder;
+  setMaxConnections(max: Int): ServerConfigBuilder;
+  addRoute(route: String): ServerConfigBuilder;
+  build(): Result<ServerConfig, String>;
+}
+
+// 3. Función constructora del Builder con valores por defecto seguros
+export fn newServerConfigBuilder(current: ServerConfig): ServerConfigBuilder => {
+  {
+    setHost: (h: String): ServerConfigBuilder =>
+    newServerConfigBuilder({...current, host: h}),
+
+    setPort: (p: Int): ServerConfigBuilder =>
+    newServerConfigBuilder({...current, port: p}),
+
+    withTls: (tls: Bool): ServerConfigBuilder =>
+    newServerConfigBuilder({...current, enableTls: tls}),
+
+    setTimeout: (t: Int): ServerConfigBuilder =>
+    newServerConfigBuilder({...current, timeoutMs: t}),
+
+    setMaxConnections: (m: Int): ServerConfigBuilder =>
+    newServerConfigBuilder({...current, maxConnections: m}),
+
+    addRoute: (r: String): ServerConfigBuilder => {
+      let mut newRoutes: List<String> = current.routes;
+      newRoutes.push(r);
+      newServerConfigBuilder({...current, routes: newRoutes})
+    },
+
+    build: (): Result<ServerConfig, String> => {
+      // Validaciones de negocio antes de retornar el producto final
+      if (current.port <= 0 || current.port>65535) {
+        return Err(`Puerto inválido: ${current.port}. Debe estar entre 1 y 65535.`);
+      }
+      if (current.host == "") {
+        return Err("El host no puede ser una cadena vacía.");
+      }
+      if (current.maxConnections <= 0) {
+        return Err("maxConnections debe ser mayor a 0.");
+      }
+
+      Ok(current)
+    }
+  }
+};
+
+// Punto de entrada para iniciar la construcción con configuración inicial por defecto
+export fn defaultServerBuilder(): ServerConfigBuilder => {
+  let initialConfig: ServerConfig = {
+    host: "127.0.0.1",
+    port: 8080,
+    enableTls: false,
+    timeoutMs: 3000,
+    maxConnections: 100,
+    routes: []
+  };
+  newServerConfigBuilder(initialConfig)
+};
+
+// 4. Demostración y Ejecución
+export fn main(): Unit => {
+  println("==================================================");
+  println("  PATRÓN BUILDER EN AURA LANG");
+  println("==================================================");
+
+  // A. Construcción de un servidor de desarrollo
+  let devConfigResult = defaultServerBuilder()
+  .setPort(3000)
+  .addRoute("/health")
+  .addRoute("/api/v1/users")
+  .build();
+
+  match devConfigResult {
+    Ok(cfg) => {
+      println("✓ Servidor de Desarrollo construido:");
+      println(`  - Host: ${cfg.host}:${cfg.port}`);
+      println(`  - TLS Activo: ${cfg.enableTls}`);
+      println(`  - Timeout: ${cfg.timeoutMs} ms`);
+      println(`  - Max Conexiones: ${cfg.maxConnections}`);
+      println(`  - Rutas registradas: ${cfg.routes.length}`);
+    },
+    Err(err) => println(`✕ Error de configuración: ${err}`)
+  };
+
+  // B. Construcción de un servidor de producción robusto con TLS
+  println("\n--- Configuración de Producción ---");
+  let prodConfigResult = defaultServerBuilder()
+  .setHost("0.0.0.0")
+  .setPort(443)
+  .withTls(true)
+  .setTimeout(10000)
+  .setMaxConnections(5000)
+  .addRoute("/metrics")
+  .addRoute("/api/v1/orders")
+  .addRoute("/api/v1/payments")
+  .build();
+
+  match prodConfigResult {
+    Ok(cfg) => {
+      println("✓ Servidor de Producción construido:");
+      println(`  - Host: ${cfg.host}:${cfg.port}`);
+      println(`  - TLS Activo: ${cfg.enableTls}`);
+      println(`  - Max Conexiones: ${cfg.maxConnections}`);
+    },
+    Err(err) => println(`✕ Error: ${err}`)
+  };
+
+  // C. Caso con error de validación detectado por el Builder
+  println("\n--- Validación de Errores en Builder ---");
+  let invalidConfigResult = defaultServerBuilder()
+  .setPort(99999)// Puerto fuera de rango
+  .build();
+
+  match invalidConfigResult {
+    Ok(_) => println("Error: no debió construirse"),
+    Err(err) => println(`✓ Validación detectó error esperado: "${err}"`)
+  };
+
+  println("\n✓ Builder ejecutado correctamente.");
+};

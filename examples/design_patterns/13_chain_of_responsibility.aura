@@ -1,0 +1,160 @@
+// =============================================================================
+// Patrón de Diseño: Chain of Responsibility (Cadena de Responsabilidad / Middleware)
+// =============================================================================
+// Propósito:
+//   Permite pasar peticiones a lo largo de una cadena de manejadores. Al recibir
+//   una petición, cada manejador decide procesarla o pasarla al siguiente
+//   eslabón de la cadena.
+//
+// En Aura:
+//   Se implementa mediante una canalización funcional de middlewares / interceptores
+//   fuertemente tipados, donde cada paso valida condiciones previas y puede
+//   abortar el procesamiento temprano con `Result.Err` o continuar con `next`.
+// =============================================================================
+
+// 1. Estructura de la Petición y Respuesta en la Cadena
+export type HttpRequest = {
+  path: String,
+  authToken: String,
+  role: String,
+  clientIp: String,
+  payload: String
+};
+
+export type HttpResponse = {
+  statusCode: Int,
+  body: String
+};
+
+// 2. Definición del Manejador en la Cadena (Middleware Function)
+export type HandlerFn = fn(HttpRequest) -> Result<HttpResponse, String>;
+
+// 3. Eslabón 1: Autenticación (Verifica presencia y validez del token)
+export fn authenticationMiddleware(req: HttpRequest, next: HandlerFn): Result<HttpResponse, String> => {
+  println("   [1. AuthMiddleware] Verificando credenciales de acceso...");
+  if (req.authToken == "") {
+    println("   ✕ [1. AuthMiddleware] Token ausente. Petición rechazada (401 Unauthorized).");
+    return Ok({statusCode: 401, body: "Error: Falta encabezado de autorización Bearer"});
+  }
+  if (!req.authToken.startsWith("aura_sec_")) {
+    println("   ✕ [1. AuthMiddleware] Token inválido o expirado (403 Forbidden).");
+    return Ok({statusCode: 403, body: "Error: Token de firma inválida"});
+  }
+  println("   ✓ [1. AuthMiddleware] Token verificado correctamente.");
+  next(req)
+};
+
+// 4. Eslabón 2: Límite de Tasa de Peticiones (Rate Limiting)
+export fn rateLimitMiddleware(req: HttpRequest, next: HandlerFn): Result<HttpResponse, String> => {
+  println(`   [2. RateLimiter] Comprobando cuota de peticiones para IP: ${req.clientIp}...`);
+  if (req.clientIp == "192.168.1.99") {
+    println("   ✕ [2. RateLimiter] Límite excedido: IP bloqueada temporalmente (429 Too Many Requests).");
+    return Ok({statusCode: 429, body: "Error: Límite de tasa excedido (HTTP 429)"});
+  }
+  println("   ✓ [2. RateLimiter] Cuota disponible.");
+  next(req)
+};
+
+// 5. Eslabón 3: Validación del Cuerpo y Sanitización (Input Validation)
+export fn validationMiddleware(req: HttpRequest, next: HandlerFn): Result<HttpResponse, String> => {
+  println("   [3. Validator] Validando integridad del payload JSON...");
+  if (req.payload == "") {
+    println("   ✕ [3. Validator] Payload vacío detectado (400 Bad Request).");
+    return Ok({statusCode: 400, body: "Error: El cuerpo de la solicitud no puede estar vacío"});
+  }
+  println("   ✓ [3. Validator] Esquema validado con éxito.");
+  next(req)
+};
+
+// 6. Eslabón Final: Manejador de Negocio (Endpoint Controller)
+export fn endpointController(req: HttpRequest): Result<HttpResponse, String> => {
+  println(`   🎯 [4. EndpointController] Ejecutando lógica de negocio en ruta: ${req.path}`);
+  println(`      Procesando payload para rol '${req.role}'...`);
+  Ok({
+    statusCode: 200,
+    body: `{"status": "success", "data": "Recurso obtenido para usuario ${req.role}"}`
+  })
+};
+
+// 7. Ensamblador de la Cadena de Responsabilidad
+export fn buildPipeline(): HandlerFn => {
+  (req: HttpRequest): Result<HttpResponse, String> =>
+  authenticationMiddleware(req, (req1: HttpRequest): Result<HttpResponse, String> =>
+  rateLimitMiddleware(req1, (req2: HttpRequest): Result<HttpResponse, String> =>
+  validationMiddleware(req2, (req3: HttpRequest): Result<HttpResponse, String> =>
+  endpointController(req3)
+  )
+  )
+  )
+};
+
+// 8. Demostración y Ejecución
+export fn main(): Unit => {
+  println("==================================================");
+  println("  PATRÓN CHAIN OF RESPONSIBILITY EN AURA LANG");
+  println("==================================================");
+
+  let pipeline = buildPipeline();
+
+  // Caso 1: Petición Válida completa que atraviesa toda la cadena
+  println("--- Caso 1: Petición Válida (Atraviesa toda la cadena) ---");
+  let validRequest: HttpRequest = {
+    path: "/api/v1/metrics",
+    authToken: "aura_sec_token_991823",
+    role: "admin",
+    clientIp: "10.0.0.1",
+    payload: "{\"metric\": \"cpu_load\"}"
+  };
+  let res1 = pipeline(validRequest);
+  match res1 {
+    Ok(httpRes) => println(`   Respuesta: HTTP ${httpRes.statusCode} -> ${httpRes.body}\n`),
+    Err(err) => println(`✕ Error fatal: ${err}\n`)
+  };
+
+  // Caso 2: Petición sin Token (Abortada tempranamente en Eslabón 1)
+  println("--- Caso 2: Petición sin Token (Abortada en Eslabón 1) ---");
+  let unauthRequest: HttpRequest = {
+    path: "/api/v1/metrics",
+    authToken: "",
+    role: "anonymous",
+    clientIp: "10.0.0.2",
+    payload: "{}"
+  };
+  let res2 = pipeline(unauthRequest);
+  match res2 {
+    Ok(httpRes) => println(`   Respuesta: HTTP ${httpRes.statusCode} -> ${httpRes.body}\n`),
+    Err(err) => println(`✕ Error fatal: ${err}\n`)
+  };
+
+  // Caso 3: Petición de IP bloqueada (Abortada en Eslabón 2)
+  println("--- Caso 3: IP en Lista Negra (Abortada en Eslabón 2) ---");
+  let rateLimitedRequest: HttpRequest = {
+    path: "/api/v1/metrics",
+    authToken: "aura_sec_valid_key",
+    role: "user",
+    clientIp: "192.168.1.99",
+    payload: "{\"action\": \"ping\"}"
+  };
+  let res3 = pipeline(rateLimitedRequest);
+  match res3 {
+    Ok(httpRes) => println(`   Respuesta: HTTP ${httpRes.statusCode} -> ${httpRes.body}\n`),
+    Err(err) => println(`✕ Error fatal: ${err}\n`)
+  };
+
+  // Caso 4: Petición con Payload Vacío (Abortada en Eslabón 3)
+  println("--- Caso 4: Payload Vacío (Abortada en Eslabón 3) ---");
+  let invalidPayloadRequest: HttpRequest = {
+    path: "/api/v1/metrics",
+    authToken: "aura_sec_valid_key",
+    role: "user",
+    clientIp: "10.0.0.5",
+    payload: ""
+  };
+  let res4 = pipeline(invalidPayloadRequest);
+  match res4 {
+    Ok(httpRes) => println(`   Respuesta: HTTP ${httpRes.statusCode} -> ${httpRes.body}\n`),
+    Err(err) => println(`✕ Error fatal: ${err}\n`)
+  };
+
+  println("✓ Chain of Responsibility ejecutado correctamente.");
+};

@@ -1,0 +1,92 @@
+// =============================================================================
+// Patrón de Diseño: Singleton Concurrente Seguro (Thread-Safe Singleton)
+// =============================================================================
+// Propósito:
+//   Garantiza que una estructura o recurso compartido tenga una única instancia
+//   global y proporciona un punto de acceso unificado, seguro para concurrencia.
+//
+// En Aura:
+//   Se implementa utilizando la primitiva nativa de sincronización `Once`
+//   (`sync.Once` estilo Go), garantizando que la inicialización costosa ocurra
+//   exactamente una vez incluso cuando múltiples fibers concurrentes intenten
+//   acceder simultáneamente.
+// =============================================================================
+
+// 1. Estructura del recurso singleton (Pool de Conexiones a Base de Datos)
+export type DatabasePool = {
+  connectionString: String,
+  maxPoolSize: Int,
+  activeConnections: Int,
+  clusterNode: String
+};
+
+// 2. Estado estático protegido y control de ejecución atómica única
+let poolOnce = Once.new();
+let mut instance: Option<DatabasePool> = None;
+
+// Contador para demostrar que el constructor costoso solo corre una vez
+let mut initCount: Int = 0;
+
+// 3. Función de acceso global (GetInstance)
+export fn getDatabasePool(): DatabasePool => {
+  poolOnce.do(() => {
+    initCount = initCount + 1;
+    println(">>> [SINGLETON] Inicializando el Pool de Conexiones (operación costosa)...");
+
+    instance = Some({
+      connectionString: "postgresql://primary.prod.aura.internal:5432/app_db",
+      maxPoolSize: 50,
+      activeConnections: 1,
+      clusterNode: "us-east-cluster-01"
+    });
+  });
+
+  match instance {
+    Some(pool) => pool,
+    None => {
+      connectionString: "",
+      maxPoolSize: 0,
+      activeConnections: 0,
+      clusterNode: ""
+    }
+  }
+};
+
+// 4. Demostración y Verificación Concurrente
+export async fn main(): Task<Unit, String> => {
+  println("==================================================");
+  println("  PATRÓN SINGLETON CONCURRENTE EN AURA LANG");
+  println("==================================================");
+
+  println("1. Acceso secuencial inicial:");
+  let client1 = getDatabasePool();
+  println(`   Cliente 1 conectado a nodo: ${client1.clusterNode} (Max pool: ${client1.maxPoolSize})`);
+
+  let client2 = getDatabasePool();
+  println(`   Cliente 2 conectado a nodo: ${client2.clusterNode} (Max pool: ${client2.maxPoolSize})`);
+
+  println("\n2. Acceso altamente concurrente con 5 fibers simultáneos (spawn):");
+  let wg = WaitGroup.new();
+  wg.add(5);
+
+  let fiberIds: List<Int> = [1, 2, 3, 4, 5];
+  for id in fiberIds {
+    spawn {
+      let pool = getDatabasePool();
+      println(`   [Fiber #${id}] Instancia obtenida: ${pool.connectionString}`);
+      wg.done();
+    };
+  }
+
+  await wg.wait();
+
+  println("\n3. Verificación de Invariante:");
+  println(`   Cantidad de inicializaciones ejecutadas: ${initCount}`);
+  if (initCount == 1) {
+    println("   ✓ ÉXITO: El recurso solo fue inicializado 1 vez a pesar del acceso concurrente.");
+  }else {
+    println("   ✕ FALLO: Se detectaron múltiples inicializaciones.");
+  }
+
+  println("\n✓ Singleton ejecutado correctamente.");
+};

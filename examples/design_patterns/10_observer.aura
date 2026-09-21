@@ -1,0 +1,120 @@
+// =============================================================================
+// Patrón de Diseño: Observer / Pub-Sub (Concurrencia CSP con Canales y Fibers)
+// =============================================================================
+// Propósito:
+//   Define una dependencia uno-a-muchos entre objetos de modo que cuando un
+//   objeto cambie su estado, todos sus dependientes sean notificados
+//   automáticamente y de forma desacoplada.
+//
+// En Aura:
+//   Se implementa de forma altamente concurrente y nativa mediante canales
+//   tipados (`Channel<T>`), fibers livianos (`spawn`) y sincronización con
+//   `WaitGroup`, superando el modelo clásico síncrono bloqueante de OOP.
+// =============================================================================
+
+// 1. Tipo de Evento en el Bus de Mensajería
+export type DomainEvent = {
+  eventId: String,
+  topic: String,
+  payload: String,
+  timestamp: String
+};
+
+// 2. Definición del Bus de Eventos (EventBus)
+export type EventBus = {
+  subscribers: List<Channel<DomainEvent>>
+};
+
+export fn newEventBus(): EventBus => {
+  subscribers: []
+};
+
+// Registrar un nuevo suscriptor al bus
+export fn subscribe(bus: EventBus, ch: Channel<DomainEvent>): EventBus => {
+  let mut newSubs: List<Channel<DomainEvent>> = bus.subscribers;
+  newSubs.push(ch);
+  {...bus, subscribers: newSubs}
+};
+
+// Publicar un evento hacia todos los observadores registrados
+export fn publish(bus: EventBus, event: DomainEvent): Unit => {
+  println(`📢 [EVENT-BUS] Publicando evento #${event.eventId} sobre tópico '${event.topic}'...`);
+  for subCh in bus.subscribers {
+    subCh <- event;
+  }
+};
+
+// 3. Demostración Concurrente
+export async fn main(): Task<Unit, String> => {
+  println("==================================================");
+  println("  PATRÓN OBSERVER (PUB-SUB CSP) EN AURA LANG");
+  println("==================================================");
+
+  let mut bus = newEventBus();
+
+  // Canales independientes para 3 observadores especializados
+  let emailObserverCh: Channel<DomainEvent> = Channel.make(10);
+  let analyticsObserverCh: Channel<DomainEvent> = Channel.make(10);
+  let auditObserverCh: Channel<DomainEvent> = Channel.make(10);
+
+  // Registro de observadores en el bus
+  bus = subscribe(bus, emailObserverCh);
+  bus = subscribe(bus, analyticsObserverCh);
+  bus = subscribe(bus, auditObserverCh);
+
+  let wg = WaitGroup.new();
+  wg.add(3);
+
+  // Observador 1: Servicio de Email (Fiber en background)
+  spawn {
+    let msg = <-emailObserverCh;
+    match msg {
+      Some(ev) => {
+        println(`   ✉️ [Observer-Email] Notificando cliente: Nuevo pedido #${ev.payload}`);
+      },
+      None => ()
+    };
+    wg.done();
+  };
+
+  // Observador 2: Servicio de Telemetría y Analíticas (Fiber en background)
+  spawn {
+    let msg = <-analyticsObserverCh;
+    match msg {
+      Some(ev) => {
+        println(`   📊 [Observer-Analytics] Registrando métrica: evento '${ev.topic}' a las ${ev.timestamp}`);
+      },
+      None => ()
+    };
+    wg.done();
+  };
+
+  // Observador 3: Servicio de Auditoría y Compliance (Fiber en background)
+  spawn {
+    let msg = <-auditObserverCh;
+    match msg {
+      Some(ev) => {
+        println(`   🛡️ [Observer-Audit] Almacenando registro inmutable de auditoría para ev_${ev.eventId}`);
+      },
+      None => ()
+    };
+    wg.done();
+  };
+
+  // El Emisor (Subject) emite un evento de cambio de estado
+  println("1. Emitiendo evento 'ORDER_CREATED' desde el Subject...");
+  let orderEvent: DomainEvent = {
+    eventId: "EV-1009",
+    topic: "orders/created",
+    payload: "ORD-7729 ($450 USD)",
+    timestamp: "2026-09-15T21:30:00Z"
+  };
+
+  publish(bus, orderEvent);
+
+  // Esperar a que todos los fibers de observación terminen de procesar
+  await wg.wait();
+
+  println("\n✓ Todos los observadores concurrentes procesaron el evento con éxito.");
+  println("✓ Observer ejecutado correctamente.");
+};

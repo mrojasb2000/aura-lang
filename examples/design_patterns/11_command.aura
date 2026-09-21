@@ -1,0 +1,152 @@
+// =============================================================================
+// Patrón de Diseño: Command (Comando con Historial y Soporte para Deshacer/Undo)
+// =============================================================================
+// Propósito:
+//   Encapsula una petición como un objeto, permitiendo parametrizar clientes con
+//   diferentes peticiones, encolar operaciones y soportar reversión (Undo).
+//
+// En Aura:
+//   Los comandos se representan elegantemente como tipos suma (ADTs) que describen
+//   la acción y los datos requeridos para revertirla, manteniendo el estado
+//   inmutable y seguro ante fallos.
+// =============================================================================
+
+// 1. Estado del receptor (Documento de texto)
+export type Document = {
+  content: String,
+  revision: Int
+};
+
+export fn newDocument(): Document => {
+  content: "",
+  revision: 0
+};
+
+// 2. Definición de Comandos como Tipo Suma (ADTs)
+export type EditorCommand =
+| AppendText {text: String}
+| ClearText {previousContent: String}
+| ReplaceAll {target: String, replacement: String, previousContent: String};
+
+// 3. Ejecución directa del comando (Execute)
+export fn executeCommand(doc: Document, cmd: EditorCommand): Document => {
+  match cmd {
+    AppendText {text} => {
+      let newContent = doc.content == "" ? text: `${doc.content} ${text}`;
+      println(`   [EXECUTE] Añadir texto: "${text}"`);
+      {content: newContent, revision: doc.revision + 1}
+    },
+    ClearText {previousContent} => {
+      println("   [EXECUTE] Limpiar documento");
+      {content: "", revision: doc.revision + 1}
+    },
+    ReplaceAll {target, replacement, previousContent} => {
+      let newContent = doc.content.replace(target, replacement);
+      println(`   [EXECUTE] Reemplazar '${target}' por '${replacement}'`);
+      {content: newContent, revision: doc.revision + 1}
+    }
+  }
+};
+
+// 4. Reversión del comando (Undo)
+export fn undoCommand(doc: Document, cmd: EditorCommand): Document => {
+  match cmd {
+    AppendText {text} => {
+      // Revertir removiendo el texto agregado al final
+      println(`   [UNDO] Deshacer adición de: "${text}"`);
+      let prevLen = doc.content.length - text.length;
+      let trimmed = prevLen>0 ? doc.content.slice(0, prevLen).trim(): "";
+      {content: trimmed, revision: doc.revision - 1}
+    },
+    ClearText {previousContent} => {
+      println("   [UNDO] Restaurar contenido eliminado");
+      {content: previousContent, revision: doc.revision - 1}
+    },
+    ReplaceAll {target, replacement, previousContent} => {
+      println(`   [UNDO] Restaurar texto anterior al reemplazo`);
+      {content: previousContent, revision: doc.revision - 1}
+    }
+  }
+};
+
+// 5. Invocador con Historial (CommandManager)
+export type CommandManager = {
+  document: Document,
+  history: List<EditorCommand>
+};
+
+export fn newCommandManager(): CommandManager => {
+  document: newDocument(),
+  history: []
+};
+
+// Aplicar y registrar comando en el historial
+export fn applyCommand(mgr: CommandManager, cmd: EditorCommand): CommandManager => {
+  let updatedDoc = executeCommand(mgr.document, cmd);
+  let mut newHistory: List<EditorCommand> = mgr.history;
+  newHistory.push(cmd);
+  {document: updatedDoc, history: newHistory}
+};
+
+// Deshacer el último comando aplicado (LIFO Undo)
+export fn undoLast(mgr: CommandManager): CommandManager => {
+  if (mgr.history.length == 0) {
+    println("   [UNDO] No hay comandos en el historial para revertir.");
+    return mgr;
+  }
+
+  let lastIndex = mgr.history.length - 1;
+  let lastCmd = mgr.history[lastIndex];
+  let mut newHistory: List<EditorCommand> = mgr.history;
+  newHistory.pop();
+
+  let updatedDoc = undoCommand(mgr.document, lastCmd);
+  {document: updatedDoc, history: newHistory}
+};
+
+// 6. Demostración y Ejecución
+export fn main(): Unit => {
+  println("==================================================");
+  println("  PATRÓN COMMAND EN AURA LANG");
+  println("==================================================");
+
+  let mut mgr = newCommandManager();
+
+  println("1. Ejecución Secuencial de Comandos:");
+
+  // Comando 1: Agregar saludo
+  let cmd1 = EditorCommand.AppendText({text: "Hola desde Aura Lang."});
+  mgr = applyCommand(mgr, cmd1);
+  println(`   Estado Doc (rev ${mgr.document.revision}): "${mgr.document.content}"\n`);
+
+  // Comando 2: Agregar descripción
+  let cmd2 = EditorCommand.AppendText({text: "Sistemas de alto rendimiento."});
+  mgr = applyCommand(mgr, cmd2);
+  println(`   Estado Doc (rev ${mgr.document.revision}): "${mgr.document.content}"\n`);
+
+  // Comando 3: Reemplazo
+  let cmd3 = EditorCommand.ReplaceAll({
+    target: "alto rendimiento",
+    replacement: "concurrencia nativa",
+    previousContent: mgr.document.content
+  });
+  mgr = applyCommand(mgr, cmd3);
+  println(`   Estado Doc (rev ${mgr.document.revision}): "${mgr.document.content}"\n`);
+
+  // 2. Operaciones de Deshacer (Undo)
+  println("2. Deshaciendo Operaciones (Undo Stack):");
+
+  // Deshacer Reemplazo
+  mgr = undoLast(mgr);
+  println(`   Estado Doc tras Undo (rev ${mgr.document.revision}): "${mgr.document.content}"\n`);
+
+  // Deshacer Segundo Append
+  mgr = undoLast(mgr);
+  println(`   Estado Doc tras Undo (rev ${mgr.document.revision}): "${mgr.document.content}"\n`);
+
+  // Deshacer Primer Append
+  mgr = undoLast(mgr);
+  println(`   Estado Doc tras Undo (rev ${mgr.document.revision}): "${mgr.document.content}"\n`);
+
+  println("✓ Command ejecutado correctamente.");
+};

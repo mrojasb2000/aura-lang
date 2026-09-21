@@ -1,0 +1,163 @@
+// =============================================================================
+// Patrón de Diseño: Facade (Fachada de Subsistemas)
+// =============================================================================
+// Propósito:
+//   Proporciona una interfaz unificada y simplificada a un conjunto complejo
+//   de subsistemas heterogéneos, ocultando la complejidad operativa al cliente.
+//
+// En Aura:
+//   Se orquestan subsistemas de microservicios / módulos utilizando tipos de
+//   dominio fuertemente tipados, control de flujo con `Result<T, E>` y
+//   garantías de consistencia con `defer`.
+// =============================================================================
+
+// --- Tipos de Dominio ---
+
+export type OrderRequest = {
+  orderId: String,
+  productId: String,
+  quantity: Int,
+  totalAmount: Float,
+  customerEmail: String,
+  shippingAddress: String
+};
+
+export type OrderConfirmation = {
+  orderId: String,
+  trackingNumber: String,
+  paymentReceipt: String,
+  status: String
+};
+
+// --- Subsistema 1: Gestión de Inventario ---
+
+export fn checkAndReserveStock(productId: String, quantity: Int): Result<String, String> => {
+  println(`   [Subsistema-Inventario] Verificando ${quantity} unidades para SKU '${productId}'...`);
+  if (quantity>10) {
+    return Err(`Stock insuficiente para el producto ${productId}. Solicitado: ${quantity}`);
+  }
+  println("   [Subsistema-Inventario] Stock reservado exitosamente con candado temporal.");
+  Ok("STOCK-RESERVED-9921")
+};
+
+// --- Subsistema 2: Pasarela Financiera y Cobros ---
+
+export fn chargeCustomer(email: String, amount: Float): Result<String, String> => {
+  println(`   [Subsistema-Pagos] Procesando débito de $${amount} para ${email}...`);
+  if (amount <= 0.0) {
+    return Err("El monto de cobro debe ser superior a cero.");
+  }
+  println("   [Subsistema-Pagos] Transacción bancaria aprobada por la red de crédito.");
+  Ok("TX-PAYMENT-48201A")
+};
+
+// --- Subsistema 3: Logística y Despacho Físico ---
+
+export fn scheduleDelivery(orderId: String, address: String): Result<String, String> => {
+  println(`   [Subsistema-Logística] Generando etiqueta de envío para ${address}...`);
+  println("   [Subsistema-Logística] Courier asignado y paquete en ruta.");
+  Ok("TRACK-DHL-CHL-9988")
+};
+
+// --- Subsistema 4: Centro de Notificaciones y Recibos ---
+
+export fn sendOrderEmail(email: String, orderId: String, tracking: String): Unit => {
+  println(`   [Subsistema-Notificaciones] Email de confirmación enviado a ${email} con seguimiento ${tracking}.`);
+};
+
+// --- LA FACHADA: E-Commerce Checkout Facade ---
+
+export interface OrderProcessingFacade {
+  placeOrder(req: OrderRequest): Result<OrderConfirmation, String>;
+}
+
+export fn createOrderFacade(): OrderProcessingFacade => {
+  {
+    placeOrder: (req: OrderRequest): Result<OrderConfirmation, String> => {
+      println(`\n>>> [FACADE] Iniciando orquestación simplificada para orden #${req.orderId}...`);
+      defer println(`<<< [FACADE] Flujo de orquestación completado para orden #${req.orderId}.`);
+
+      // 1. Verificar inventario
+      let stockResult = checkAndReserveStock(req.productId, req.quantity);
+      match stockResult {
+        Err(err) => Err(`Fallo en Inventario: ${err}`),
+        Ok(reservationId) => {
+          // 2. Procesar pago
+          let paymentResult = chargeCustomer(req.customerEmail, req.totalAmount);
+          match paymentResult {
+            Err(err) => Err(`Fallo en Pago: ${err}`),
+            Ok(receipt) => {
+              // 3. Coordinar logística de envío
+              let shippingResult = scheduleDelivery(req.orderId, req.shippingAddress);
+              match shippingResult {
+                Err(err) => Err(`Fallo en Despacho: ${err}`),
+                Ok(tracking) => {
+                  // 4. Notificar al cliente de forma asíncrona
+                  sendOrderEmail(req.customerEmail, req.orderId, tracking);
+
+                  // 5. Retornar confirmación consolidada
+                  Ok({
+                    orderId: req.orderId,
+                    trackingNumber: tracking,
+                    paymentReceipt: receipt,
+                    status: "CONFIRMED_AND_SHIPPED"
+                  })
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+// --- Demostración y Ejecución ---
+
+export fn main(): Unit => {
+  println("==================================================");
+  println("  PATRÓN FACADE EN AURA LANG");
+  println("==================================================");
+
+  let facade = createOrderFacade();
+
+  // Caso 1: Flujo exitoso simplificado a una única llamada de alto nivel
+  let validOrder: OrderRequest = {
+    orderId: "ORD-9901",
+    productId: "LAPTOP-M3-PRO",
+    quantity: 1,
+    totalAmount: 1999.99,
+    customerEmail: "maria@empresa.cl",
+    shippingAddress: "Av. Libertador 450, Santiago"
+  };
+
+  let res1 = facade.placeOrder(validOrder);
+  match res1 {
+    Ok(conf) => {
+      println("\n✓ Resumen de Compra para el Cliente:");
+      println(`  - ID Orden: ${conf.orderId}`);
+      println(`  - Número de Guía: ${conf.trackingNumber}`);
+      println(`  - Comprobante: ${conf.paymentReceipt}`);
+      println(`  - Estado: ${conf.status}`);
+    },
+    Err(err) => println(`✕ Error: ${err}`)
+  };
+
+  // Caso 2: Error manejado elegantemente por la fachada (stock insuficiente)
+  let orderOutOfStock: OrderRequest = {
+    orderId: "ORD-9902",
+    productId: "GPU-RTX-5090",
+    quantity: 50, // Supera el límite de stock de 10
+    totalAmount: 99990.0,
+    customerEmail: "gamer@store.com",
+    shippingAddress: "Calle Central 10"
+  };
+
+  let res2 = facade.placeOrder(orderOutOfStock);
+  match res2 {
+    Ok(_) => println("Error: no debió procesarse"),
+    Err(err) => println(`\n✓ La Fachada interceptó el fallo de forma limpia: "${err}"`)
+  };
+
+  println("\n✓ Facade ejecutado correctamente.");
+};

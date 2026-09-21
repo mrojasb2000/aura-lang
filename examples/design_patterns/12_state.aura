@@ -1,0 +1,183 @@
+// =============================================================================
+// Patrón de Diseño: State (Máquina de Estados Finita con Tipos Suma)
+// =============================================================================
+// Propósito:
+//   Permite a un objeto alterar su comportamiento cuando su estado interno cambia,
+//   modelando una máquina de estados finita (FSM) formal y robusta.
+//
+// En Aura:
+//   Se implementa utilizando tipos algebraicos (ADTs) y pattern matching exhaustivo.
+//   A diferencia de POO tradicional, cada estado puede portar datos específicos
+//   de esa fase del ciclo de vida, imposibilitando estados inválidos en tiempo
+//   de compilación (make illegal states unrepresentable).
+// =============================================================================
+
+// 1. Estados Posibles del Pedido (cada estado contiene sus propios datos pertinentes)
+export type OrderState =
+| Draft {itemsCount: Int}
+| PendingPayment {invoiceId: String, amount: Float}
+| Processing {trackingCode: String, warehouseId: String}
+| Shipped {trackingCode: String, carrier: String, etaDays: Int}
+| Delivered {signedBy: String}
+| Cancelled {reason: String};
+
+// 2. Eventos / Acciones que disparan transiciones de estado
+export type OrderEvent =
+| CheckoutEvent {invoiceId: String, amount: Float}
+| PaymentConfirmedEvent {trackingCode: String, warehouseId: String}
+| DispatchEvent {carrier: String, etaDays: Int}
+| DeliveryConfirmedEvent {signedBy: String}
+| CancelOrderEvent {reason: String};
+
+// 3. Función de Transición Pura (State Machine Transition)
+export fn transitionOrder(state: OrderState, event: OrderEvent): Result<OrderState, String> => {
+  match state {
+    Draft {itemsCount} => {
+      match event {
+        CheckoutEvent {invoiceId, amount} => {
+          if (itemsCount <= 0) {
+            return Err("No se puede pagar un pedido sin productos.");
+          }
+          println(`   🔄 [Transición] Draft -> PendingPayment (Factura: ${invoiceId}, Monto: $${amount})`);
+          Ok(OrderState.PendingPayment({invoiceId: invoiceId, amount: amount}))
+        },
+        CancelOrderEvent {reason} => {
+          println(`   🔄 [Transición] Draft -> Cancelled (Motivo: ${reason})`);
+          Ok(OrderState.Cancelled({reason: reason}))
+        },
+        _ => Err("Transición inválida: Desde 'Draft' solo se puede hacer checkout o cancelar.")
+      }
+    },
+
+    PendingPayment {invoiceId, amount} => {
+      match event {
+        PaymentConfirmedEvent {trackingCode, warehouseId} => {
+          println(`   🔄 [Transición] PendingPayment -> Processing (Bodega: ${warehouseId})`);
+          Ok(OrderState.Processing({trackingCode: trackingCode, warehouseId: warehouseId}))
+        },
+        CancelOrderEvent {reason} => {
+          println(`   🔄 [Transición] PendingPayment -> Cancelled (Motivo: ${reason})`);
+          Ok(OrderState.Cancelled({reason: reason}))
+        },
+        _ => Err("Transición inválida: El pedido está pendiente de pago.")
+      }
+    },
+
+    Processing {trackingCode, warehouseId} => {
+      match event {
+        DispatchEvent {carrier, etaDays} => {
+          println(`   🔄 [Transición] Processing -> Shipped (Courier: ${carrier}, ETA: ${etaDays} días)`);
+          Ok(OrderState.Shipped({trackingCode: trackingCode, carrier: carrier, etaDays: etaDays}))
+        },
+        CancelOrderEvent {reason} => {
+          Err("Transición inválida: No se puede cancelar un pedido que ya está en empaque.")
+        },
+        _ => Err("Transición inválida: Solo se puede despachar.")
+      }
+    },
+
+    Shipped {trackingCode, carrier, etaDays} => {
+      match event {
+        DeliveryConfirmedEvent {signedBy} => {
+          println(`   🔄 [Transición] Shipped -> Delivered (Receptor: ${signedBy})`);
+          Ok(OrderState.Delivered({signedBy: signedBy}))
+        },
+        _ => Err("Transición inválida: Un pedido despachado solo puede ser confirmado como entregado.")
+      }
+    },
+
+    Delivered {signedBy} => {
+      Err("Estado Terminal: El pedido ya fue entregado; no admite más transiciones.")
+    },
+
+    Cancelled {reason} => {
+      Err(`Estado Terminal: El pedido fue cancelado previamente por: ${reason}`)
+    }
+  }
+};
+
+// 4. Renderizado amigable del estado actual
+export fn describeState(state: OrderState): String => {
+  match state {
+    Draft {itemsCount} => `[Borrador] ${itemsCount} items en el carrito`,
+    PendingPayment {invoiceId, amount} => `[Pendiente de Pago] Factura ${invoiceId} por $${amount}`,
+    Processing {trackingCode, warehouseId} => `[En Preparación] Empacando en bodega ${warehouseId}`,
+    Shipped {trackingCode, carrier, etaDays} => `[Despachado] Vía ${carrier} (${trackingCode}), entrega en ${etaDays} días`,
+    Delivered {signedBy} => `[Entregado] Recibido por ${signedBy}`,
+    Cancelled {reason} => `[Cancelado] Motivo: ${reason}`
+  }
+};
+
+// 5. Demostración y Ejecución
+export fn main(): Unit => {
+  println("==================================================");
+  println("  PATRÓN STATE EN AURA LANG");
+  println("==================================================");
+
+  // Iniciar en estado Borrador (Draft)
+  let mut currentOrderState = OrderState.Draft({itemsCount: 3});
+  println(`1. Estado Inicial: ${describeState(currentOrderState)}\n`);
+
+  // Paso 1: Checkout
+  let res1 = transitionOrder(currentOrderState, OrderEvent.CheckoutEvent({
+    invoiceId: "INV-2026-990",
+    amount: 320.50
+  }));
+  match res1 {
+    Ok(next) => {
+      currentOrderState = next;
+      println(`   Estado Actual: ${describeState(currentOrderState)}\n`);
+    },
+    Err(err) => println(`✕ Error: ${err}\n`)
+  };
+
+  // Paso 2: Pago confirmado
+  let res2 = transitionOrder(currentOrderState, OrderEvent.PaymentConfirmedEvent({
+    trackingCode: "TRK-AURA-88",
+    warehouseId: "WH-CENTRAL"
+  }));
+  match res2 {
+    Ok(next) => {
+      currentOrderState = next;
+      println(`   Estado Actual: ${describeState(currentOrderState)}\n`);
+    },
+    Err(err) => println(`✕ Error: ${err}\n`)
+  };
+
+  // Paso 3: Despacho a Courier
+  let res3 = transitionOrder(currentOrderState, OrderEvent.DispatchEvent({
+    carrier: "FedEx Express",
+    etaDays: 2
+  }));
+  match res3 {
+    Ok(next) => {
+      currentOrderState = next;
+      println(`   Estado Actual: ${describeState(currentOrderState)}\n`);
+    },
+    Err(err) => println(`✕ Error: ${err}\n`)
+  };
+
+  // Paso 4: Confirmar entrega final
+  let res4 = transitionOrder(currentOrderState, OrderEvent.DeliveryConfirmedEvent({
+    signedBy: "Carlos Mendoza"
+  }));
+  match res4 {
+    Ok(next) => {
+      currentOrderState = next;
+      println(`   Estado Actual: ${describeState(currentOrderState)}\n`);
+    },
+    Err(err) => println(`✕ Error: ${err}\n`)
+  };
+
+  // Paso 5: Intento de transición ilegal desde estado terminal
+  println("2. Verificación de Protección contra Transiciones Inválidas:");
+  let illegalTransition = transitionOrder(currentOrderState, OrderEvent.CancelOrderEvent({
+    reason: "Cambio de opinión"
+  }));
+  match illegalTransition {
+    Ok(_) => println("✕ Error: Permitió cancelar una orden entregada"),
+    Err(err) => println(`   ✓ La máquina de estados rechazó la transición ilegal:\n     "${err}"`)
+  };
+
+  println("\n✓ State ejecutado correctamente.");
+};
